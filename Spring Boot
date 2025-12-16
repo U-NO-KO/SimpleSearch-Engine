@@ -1,0 +1,96 @@
+package com.example.search;
+
+import org.springframework.stereotype.Controller;
+import org.springframework.ui.Model;
+import org.springframework.web.bind.annotation.*;
+import java.util.*;
+
+@Controller
+public class SearchController {
+    
+    private final SimpleSearchEngine searchEngine;
+    
+    public SearchController() {
+        this.searchEngine = new SimpleSearchEngine();
+        initializeSampleData();
+    }
+    
+    private void initializeSampleData() {
+        // Предзагружаем документы
+        String[] sampleDocs = {
+            "Python — это язык программирования",
+            "Программирование на Python просто и эффективно",
+            "Искусственный интеллект использует Python",
+            "Умный дом автоматизирует бытовые задачи",
+            "Автоматизация умного дома на Python",
+            "Поисковые системы индексируют миллиарды документов",
+            "Java популярный язык для enterprise разработки",
+            "Spring Framework упрощает создание веб-приложений",
+            "Базы данных хранят структурированную информацию",
+            "Машинное обучение используется для анализа данных"
+        };
+        
+        for (String doc : sampleDocs) {
+            searchEngine.addDocument(doc);
+        }
+    }
+    
+    @GetMapping("/")
+    public String home(Model model) {
+        model.addAttribute("examples", Arrays.asList(
+            "Python", "умный дом", "программирование", "базы данных"
+        ));
+        return "search";
+    }
+    
+    @GetMapping("/search")
+    @ResponseBody
+    public Map<String, Object> search(@RequestParam String q) {
+        List<SimpleSearchEngine.SearchResult> results = searchEngine.search(q);
+        
+        List<Map<String, Object>> formattedResults = new ArrayList<>();
+        for (SimpleSearchEngine.SearchResult result : results) {
+            String text = searchEngine.getDocument(result.docId);
+            Map<String, Object> item = new HashMap<>();
+            item.put("id", result.docId);
+            item.put("score", String.format("%.4f", result.score));
+            item.put("text", text);
+            item.put("preview", text.length() > 100 ? 
+                text.substring(0, 100) + "..." : text);
+            formattedResults.add(item);
+        }
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("query", q);
+        response.put("results", formattedResults);
+        response.put("count", results.size());
+        
+        return response;
+    }
+    
+    @PostMapping("/add")
+    @ResponseBody
+    public Map<String, Object> addDocument(@RequestParam String text) {
+        int docId = searchEngine.addDocument(text);
+        
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("docId", docId);
+        response.put("message", "Документ успешно добавлен");
+        
+        return response;
+    }
+}
+
+// Главный класс приложения
+package com.example.search;
+
+import org.springframework.boot.SpringApplication;
+import org.springframework.boot.autoconfigure.SpringBootApplication;
+
+@SpringBootApplication
+public class SearchApplication {
+    public static void main(String[] args) {
+        SpringApplication.run(SearchApplication.class, args);
+    }
+}
