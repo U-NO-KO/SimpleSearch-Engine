@@ -1,0 +1,218 @@
+import java.util.*;
+import java.util.regex.*;
+import java.io.*;
+
+public class SimpleSearchEngine {
+    // Инвертированный индекс: слово -> Map<документ, позиции>
+    private Map<String, Map<Integer, List<Integer>>> index;
+    // Документы: ID -> текст
+    private Map<Integer, String> documents;
+    private int nextDocId;
+    
+    public SimpleSearchEngine() {
+        this.index = new HashMap<>();
+        this.documents = new HashMap<>();
+        this.nextDocId = 1;
+    }
+    
+    /**
+     * Добавление документа в индекс
+     */
+    public int addDocument(String text) {
+        int docId = nextDocId++;
+        documents.put(docId, text);
+        
+        // Токенизация текста
+        List<String> words = tokenize(text);
+        
+        // Добавление в инвертированный индекс
+        for (int position = 0; position < words.size(); position++) {
+            String word = words.get(position);
+            
+            index.putIfAbsent(word, new HashMap<>());
+            Map<Integer, List<Integer>> docMap = index.get(word);
+            
+            docMap.putIfAbsent(docId, new ArrayList<>());
+            docMap.get(docId).add(position);
+        }
+        
+        return docId;
+    }
+    
+    /**
+     * Простая токенизация текста
+     */
+    private List<String> tokenize(String text) {
+        List<String> words = new ArrayList<>();
+        Pattern pattern = Pattern.compile("\\b\\w+\\b");
+        Matcher matcher = pattern.matcher(text.toLowerCase());
+        
+        while (matcher.find()) {
+            words.add(matcher.group());
+        }
+        
+        return words;
+    }
+    
+    /**
+     * Поиск документов по запросу
+     */
+    public List<SearchResult> search(String query) {
+        List<String> queryWords = tokenize(query);
+        
+        if (queryWords.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // Находим документы, содержащие все слова запроса
+        Set<Integer> resultDocs = null;
+        
+        for (String word : queryWords) {
+            if (index.containsKey(word)) {
+                Set<Integer> docIds = index.get(word).keySet();
+                
+                if (resultDocs == null) {
+                    resultDocs = new HashSet<>(docIds);
+                } else {
+                    resultDocs.retainAll(docIds);
+                }
+            } else {
+                // Если хотя бы одного слова нет - нет результатов
+                return new ArrayList<>();
+            }
+        }
+        
+        if (resultDocs == null || resultDocs.isEmpty()) {
+            return new ArrayList<>();
+        }
+        
+        // Ранжирование по TF-IDF
+        List<SearchResult> results = new ArrayList<>();
+        for (int docId : resultDocs) {
+            double score = calculateTFIDFScore(docId, queryWords);
+            results.add(new SearchResult(docId, score));
+        }
+        
+        // Сортировка по убыванию релевантности
+        results.sort((a, b) -> Double.compare(b.score, a.score));
+        
+        return results;
+    }
+    
+    /**
+     * Расчёт TF-IDF для документа
+     */
+    private double calculateTFIDFScore(int docId, List<String> queryWords) {
+        double score = 0.0;
+        int totalDocs = documents.size();
+        
+        for (String word : queryWords) {
+            if (index.containsKey(word) && index.get(word).containsKey(docId)) {
+                // TF (Term Frequency) - частота слова в документе
+                List<Integer> positions = index.get(word).get(docId);
+                double tf = (double) positions.size() / tokenize(documents.get(docId)).size();
+                
+                // IDF (Inverse Document Frequency)
+                int docsWithWord = index.get(word).size();
+                double idf = Math.log((double) totalDocs / (1 + docsWithWord));
+                
+                score += tf * idf;
+            }
+        }
+        
+        return score;
+    }
+    
+    /**
+     * Получение текста документа по ID
+     */
+    public String getDocument(int docId) {
+        return documents.getOrDefault(docId, "Документ не найден");
+    }
+    
+    /**
+     * Вспомогательный класс для результатов поиска
+     */
+    public static class SearchResult {
+        public final int docId;
+        public final double score;
+        
+        public SearchResult(int docId, double score) {
+            this.docId = docId;
+            this.score = score;
+        }
+        
+        @Override
+        public String toString() {
+            return String.format("[ID:%d, релевантность:%.3f]", docId, score);
+        }
+    }
+    
+    /**
+     * Демонстрация работы поисковой системы
+     */
+    public static void demo() {
+        System.out.println("=== ДЕМОНСТРАЦИЯ ПРОСТЕЙШЕЙ ПОИСКОВОЙ СИСТЕМЫ ===\n");
+        
+        SimpleSearchEngine engine = new SimpleSearchEngine();
+        
+        // Добавляем документы
+        String[] documents = {
+            "Умный дом автоматизирует управление освещением",
+            "Система умного дома включает датчики движения",
+            "Датчики освещённости регулируют яркость света",
+            "Автоматизация умного дома экономит электроэнергию",
+            "Управление через голосовые команды удобно"
+        };
+        
+        System.out.println("Добавляем документы в индекс:");
+        for (int i = 0; i < documents.length; i++) {
+            int docId = engine.addDocument(documents[i]);
+            System.out.printf("  Документ %d: %s%n", docId, documents[i]);
+        }
+        
+        System.out.println("\n" + "=".repeat(50));
+        
+        // Выполняем поисковые запросы
+        String[] testQueries = {
+            "умный дом",
+            "датчики движения", 
+            "освещение автоматизация",
+            "электроэнергия"
+        };
+        
+        for (String query : testQueries) {
+            System.out.printf("%nПоиск: '%s'%n", query);
+            List<SearchResult> results = engine.search(query);
+            
+            if (!results.isEmpty()) {
+                System.out.printf("Найдено документов: %d%n", results.size());
+                for (int i = 0; i < results.size(); i++) {
+                    SearchResult result = results.get(i);
+                    String docText = engine.getDocument(result.docId);
+                    System.out.printf("  %d. %s %s%n", 
+                        i + 1, result, docText);
+                }
+            } else {
+                System.out.println("  Ничего не найдено");
+            }
+        }
+        
+        System.out.println("\n" + "=".repeat(50));
+        
+        // Показываем содержимое индекса
+        System.out.println("\nСодержимое индекса (первые 5 слов):");
+        int count = 0;
+        for (Map.Entry<String, Map<Integer, List<Integer>>> entry : engine.index.entrySet()) {
+            if (count >= 5) break;
+            String word = entry.getKey();
+            int docCount = entry.getValue().size();
+            System.out.printf("  '%s': найдено в %d документах%n", word, docCount);
+            count++;
+        }
+    }
+    
+    public static void main(String[] args) {
+        demo();
+    }
+}
